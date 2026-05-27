@@ -315,6 +315,10 @@ if st.session_state.game_state == "FINISHED":
             <p style="font-size:13px; color:#555; margin-bottom:10px;"><i>"{desc}"</i></p>
             <p style="font-size:15px; color:#111; font-weight:bold;">{comment}</p>
         </div>
+        
+        <div style="margin-top: 20px; font-size: 11px; color: #999; border-top: 1px solid #ddd; padding-top: 10px;">
+            Ligand Legends game developed by Sarang Dhote | &copy; Copyright Sarang Dhote
+        </div>
     </div>
     """, unsafe_allow_html=True)
     
@@ -326,7 +330,6 @@ if st.session_state.game_state == "FINISHED":
             st.warning("Please enter your name before submitting!")
         else:
             with st.spinner("Uploading to leaderboard..."):
-                # REPLACE THIS URL WITH YOUR GOOGLE APPS SCRIPT WEBHOOK URL
                 GOOGLE_SHEET_WEBHOOK_URL = "https://script.google.com/macros/s/YOUR_SCRIPT_ID/exec"
                 payload = {
                     "Name": student_name,
@@ -419,8 +422,16 @@ if st.session_state.game_state == "DOCKING":
         process.wait()
         
         if process.returncode == 0:
-            match = re.search(r"^\s*1\s+([-+]?\d+\.\d+)", output_log, re.MULTILINE)
-            st.session_state.affinity_score = match.group(1) if match else "N/A"
+            # STRICTER PARSING: Extracts only the final score value to fix the "code" bug
+            parsed_score = "0.0"
+            for line in output_log.split("\n"):
+                if re.match(r"^\s*1\s+", line):
+                    parts = line.split()
+                    if len(parts) >= 2:
+                        parsed_score = parts[1]
+                        break
+                        
+            st.session_state.affinity_score = parsed_score
             st.session_state.game_state = "FINISHED"
             progress_bar.progress(100, text="Docking Complete!")
             time.sleep(0.5)
@@ -450,7 +461,6 @@ if st.session_state.game_state == "FINISHED" and os.path.exists("docking_poses.p
     poses = split_docking_poses("docking_poses.pdbqt")
     top_pose = poses.get(1, "")
     
-    # Calculate interactions using the restored parser
     active_interactions = compute_spatial_interactions("protein.pdbqt", top_pose)
     
     p_data = ""
@@ -459,11 +469,9 @@ if st.session_state.game_state == "FINISHED" and os.path.exists("docking_poses.p
         
     render_mobile_viewer(p_data, top_pose, style=view_style, show_surface=show_mesh, interactions=active_interactions)
     
-    # Render the new Interaction Table below the viewer
     st.write("### 🔗 Interaction Profile")
     if active_interactions:
         df_int = pd.DataFrame(active_interactions)
-        # Reorder and display the dataframe perfectly for mobile
         st.dataframe(df_int[["Residue Contact", "Interaction Type", "Distance (Å)"]], hide_index=True, use_container_width=True)
     else:
         st.info("No close contacts detected within 3.8 Å.")
