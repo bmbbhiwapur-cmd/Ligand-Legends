@@ -1,1 +1,4 @@
 libzbar0
+libxrender1
+libsm6
+libxext6
