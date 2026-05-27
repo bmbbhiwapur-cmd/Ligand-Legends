@@ -302,24 +302,21 @@ if st.session_state.game_state == "FINISHED":
     
     rank, desc, comment, rank_color = evaluate_affinity(aff_val, drug_n, disease_n)
     
-    # Render the card with zero indentation to prevent Markdown code-blocking
+    # Render the card with absolutely zero indentation to prevent Markdown code-blocking
     html_card = f"""
 <div style="background-color:#f0f7f4; border: 4px solid {rank_color}; padding:20px; border-radius:15px; margin-bottom:20px; text-align:center; box-shadow: 0px 8px 16px rgba(0,0,0,0.2);">
-    <h2 style="margin-top:0; color:#333;">🎉 DOCKING COMPLETE!</h2>
-    <h4 style="color:#666; margin-bottom:5px;">{drug_n} ➔ {prot_n}</h4>
-    
-    <p style="font-size:14px; color:gray; text-transform:uppercase; letter-spacing:1px; margin-top:15px;">Binding Affinity Score</p>
-    <h1 style="font-size:55px; font-weight:900; color:{rank_color}; margin:0;">{st.session_state.affinity_score} <span style="font-size:20px;">kcal/mol</span></h1>
-    
-    <div style="background-color: white; padding: 10px; border-radius: 8px; margin-top: 15px; border: 1px solid #ddd;">
-        <h3 style="color:{rank_color}; margin:0;">{rank}</h3>
-        <p style="font-size:13px; color:#555; margin-bottom:10px;"><i>"{desc}"</i></p>
-        <p style="font-size:15px; color:#111; font-weight:bold;">{comment}</p>
-    </div>
-    
-    <div style="margin-top: 20px; font-size: 11px; color: #999; border-top: 1px solid #ddd; padding-top: 10px;">
-        Ligand Legends game developed by Sarang Dhote | &copy; Copyright Sarang Dhote
-    </div>
+<h2 style="margin-top:0; color:#333;">🎉 DOCKING COMPLETE!</h2>
+<h4 style="color:#666; margin-bottom:5px;">{drug_n} ➔ {prot_n}</h4>
+<p style="font-size:14px; color:gray; text-transform:uppercase; letter-spacing:1px; margin-top:15px;">Binding Affinity Score</p>
+<h1 style="font-size:55px; font-weight:900; color:{rank_color}; margin:0;">{st.session_state.affinity_score} <span style="font-size:20px;">kcal/mol</span></h1>
+<div style="background-color: white; padding: 10px; border-radius: 8px; margin-top: 15px; border: 1px solid #ddd;">
+<h3 style="color:{rank_color}; margin:0;">{rank}</h3>
+<p style="font-size:13px; color:#555; margin-bottom:10px;"><i>"{desc}"</i></p>
+<p style="font-size:15px; color:#111; font-weight:bold;">{comment}</p>
+</div>
+<div style="margin-top: 20px; font-size: 11px; color: #999; border-top: 1px solid #ddd; padding-top: 10px;">
+Ligand Legends game developed by Sarang Dhote | &copy; Copyright Sarang Dhote
+</div>
 </div>
 """
     st.markdown(html_card, unsafe_allow_html=True)
