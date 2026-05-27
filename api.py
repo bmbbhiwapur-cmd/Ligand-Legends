@@ -329,7 +329,7 @@ Ligand Legends game developed by Sarang Dhote | &copy; Copyright Sarang Dhote
             st.warning("Please enter your name before submitting!")
         else:
             with st.spinner("Uploading to leaderboard..."):
-                GOOGLE_SHEET_WEBHOOK_URL = "https://script.google.com/macros/s/YOUR_SCRIPT_ID/exec"
+                GOOGLE_SHEET_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycby9H1i7zv3duNvV0sEjXJ0wHgJ_3tbqqcGiWUrZqCQEvbDHVFsNYKmjxjtueG2Dikea/exec"
                 payload = {
                     "Name": student_name,
                     "Disease": disease_n,
@@ -339,7 +339,7 @@ Ligand Legends game developed by Sarang Dhote | &copy; Copyright Sarang Dhote
                     "Rank": rank
                 }
                 try:
-                    # requests.post(GOOGLE_SHEET_WEBHOOK_URL, json=payload) 
+                    requests.post(GOOGLE_SHEET_WEBHOOK_URL, json=payload) 
                     st.success(f"Awesome job, {student_name}! Score saved to Google Sheets.")
                 except Exception as e:
                     st.error("Failed to connect to Google Sheets.")
