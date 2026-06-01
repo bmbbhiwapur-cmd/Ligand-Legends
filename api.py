@@ -186,18 +186,19 @@ def compute_spatial_interactions(receptor_file, ligand_pdbqt_str):
 # --- 4. SCORING & VISUALIZATION ---
 
 def evaluate_affinity(score_val, drug_name, disease_name):
-    if score_val >= -4.0:
+    # UPDATED LOGIC FOR PRECISE RANGES
+    if score_val > -4.5:
         rank = "Weak / Poor Binding"
         desc = "The molecule might just be loosely bumping into the protein."
         comment = f"❌ {drug_name} is considered a <b>weak</b> candidate for {disease_name} medicinal activity."
         color = "#e53935" # Red
-    elif -8.0 < score_val < -4.0:
-        rank = "Moderate / Good Binding"
+    elif -6.6 <= score_val <= -4.5:
+        rank = "Moderate Binding"
         desc = "Often used as a standard baseline or threshold for a 'hit'."
         comment = f"✅ {drug_name} shows <b>good</b> potential for {disease_name} medicinal activity."
         color = "#fb8c00" # Orange
-    else:
-        rank = "Very Strong Binding"
+    else:  # score_val <= -6.7
+        rank = "Best Binding"
         desc = "Excellent binding affinity indicating a highly stable complex."
         comment = f"🔥 {drug_name} is a <b>HIGHLY POTENT</b> candidate for {disease_name} medicinal activity!"
         color = "#2e7d32" # Green
@@ -264,7 +265,7 @@ def render_mobile_viewer(receptor_data, ligand_data, style="cartoon", show_surfa
 st.set_page_config(page_title="Ligand Legends", layout="centered")
 
 st.markdown("<h1 style='text-align: center;'>🧬 Ligand Legends</h1>", unsafe_allow_html=True)
-st.markdown("<p style='text-align: center; font-size:12px; color:gray;'>Powered by InSilico BioSphere | Developed by Tech Logic Core Systems (TLCS)</p>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center; font-size:12px; color:gray;'>Powered by InSilico BioSphere | Developed by Mr. Sarang S. Dhote</p>", unsafe_allow_html=True)
 
 if "game_state" not in st.session_state: st.session_state.game_state = "IDLE"
 if "affinity_score" not in st.session_state: st.session_state.affinity_score = ""
@@ -312,7 +313,7 @@ if st.session_state.game_state == "FINISHED":
 <p style="font-size:15px; color:#111; font-weight:bold;">{comment}</p>
 </div>
 <div style="margin-top: 20px; font-size: 11px; color: #999; border-top: 1px solid #ddd; padding-top: 10px;">
-Developed by Dr. Sarang S. Dhote | Tech Logic Core Systems (TLCS)
+Ligand Legends game developed by Sarang Dhote | &copy; Copyright Sarang Dhote
 </div>
 </div>
 """
@@ -336,13 +337,15 @@ Developed by Dr. Sarang S. Dhote | Tech Logic Core Systems (TLCS)
                     "Rank": rank
                 }
                 try:
-                    response = requests.post(GOOGLE_SHEET_WEBHOOK_URL, json=payload, timeout=10)
+                    response = requests.post(GOOGLE_SHEET_WEBHOOK_URL, json=payload)
                     if response.status_code == 200:
                         st.success(f"Awesome job, {student_name}! Score saved to Google Sheets.")
                     else:
-                        st.error(f"Error saving data. Google responded with status code: {response.status_code}")
+                        st.error(f"Failed to connect to Google Sheets. Status Code: {response.status_code}")
+                        print(f"Webhook Failed with status {response.status_code}. Response: {response.text}")
                 except Exception as e:
-                    st.error(f"Failed to connect to Google Sheets. Error details: {e}")
+                    st.error("Failed to connect to Google Sheets. Check your server logs.")
+                    print("Webhook Connection Error:", e)
     
     if st.button("🔄 Play Next Card", use_container_width=True):
         reset_game()
