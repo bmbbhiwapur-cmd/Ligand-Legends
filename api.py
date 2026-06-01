@@ -9,16 +9,8 @@ import requests
 import numpy as np
 import pandas as pd
 import streamlit.components.v1 as components
-from PIL import Image
 from rdkit import Chem
 from rdkit.Chem import AllChem
-
-try:
-    from pyzbar.pyzbar import decode
-    PYZBAR_AVAILABLE = True
-except ImportError:
-    PYZBAR_AVAILABLE = False
-
 
 # --- 1. CLOUD CONTEXT ENGINE MANAGEMENT ---
 
@@ -194,7 +186,6 @@ def compute_spatial_interactions(receptor_file, ligand_pdbqt_str):
 # --- 4. SCORING & VISUALIZATION ---
 
 def evaluate_affinity(score_val, drug_name, disease_name):
-    """Evaluates the score and returns the ranking and personalized comment."""
     if score_val >= -4.0:
         rank = "Weak / Poor Binding"
         desc = "The molecule might just be loosely bumping into the protein."
@@ -276,18 +267,25 @@ st.markdown("<h1 style='text-align: center;'>🧬 Ligand Legends</h1>", unsafe_a
 st.markdown("<p style='text-align: center; font-size:12px; color:gray;'>Powered by InSilico BioSphere | Developed by Mr. Sarang S. Dhote</p>", unsafe_allow_html=True)
 
 if "game_state" not in st.session_state: st.session_state.game_state = "IDLE"
-if "card_scanned" not in st.session_state: st.session_state.card_scanned = ""
 if "affinity_score" not in st.session_state: st.session_state.affinity_score = ""
 if "protein_meta" not in st.session_state: st.session_state.protein_meta = {}
 if "ligand_meta" not in st.session_state: st.session_state.ligand_meta = {}
 
 def reset_game():
     st.session_state.game_state = "IDLE"
-    st.session_state.card_scanned = ""
     st.session_state.affinity_score = ""
+    st.query_params.clear()
     for f in ["protein.pdbqt", "ligand.pdbqt", "docking_poses.pdbqt", "temp_ligand.pdb"]:
         if os.path.exists(f): os.remove(f)
 
+# --- AUTO-CAPTURE URL PARAMETERS ---
+if st.session_state.game_state == "IDLE" and "pdb" in st.query_params and "smiles" in st.query_params:
+    st.session_state.scanned_pdb = st.query_params.get("pdb")
+    st.session_state.scanned_smiles = st.query_params.get("smiles")
+    st.session_state.scanned_drug = st.query_params.get("drug", "Unknown Drug")
+    st.session_state.scanned_disease = st.query_params.get("disease", "Unknown Disease")
+    st.session_state.game_state = "DOCKING"
+    st.rerun()
 
 # --- THE GAME RESULT POPUP & GOOGLE SHEETS SUBMIT ---
 if st.session_state.game_state == "FINISHED":
@@ -302,7 +300,6 @@ if st.session_state.game_state == "FINISHED":
     
     rank, desc, comment, rank_color = evaluate_affinity(aff_val, drug_n, disease_n)
     
-    # Render the card with absolutely zero indentation to prevent Markdown code-blocking
     html_card = f"""
 <div style="background-color:#f0f7f4; border: 4px solid {rank_color}; padding:20px; border-radius:15px; margin-bottom:20px; text-align:center; box-shadow: 0px 8px 16px rgba(0,0,0,0.2);">
 <h2 style="margin-top:0; color:#333;">🎉 DOCKING COMPLETE!</h2>
@@ -329,7 +326,7 @@ Ligand Legends game developed by Sarang Dhote | &copy; Copyright Sarang Dhote
             st.warning("Please enter your name before submitting!")
         else:
             with st.spinner("Uploading to leaderboard..."):
-                GOOGLE_SHEET_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycby9H1i7zv3duNvV0sEjXJ0wHgJ_3tbqqcGiWUrZqCQEvbDHVFsNYKmjxjtueG2Dikea/exec"
+                GOOGLE_SHEET_WEBHOOK_URL = "https://script.google.com/macros/s/YOUR_SCRIPT_ID/exec"
                 payload = {
                     "Name": student_name,
                     "Disease": disease_n,
@@ -349,37 +346,16 @@ Ligand Legends game developed by Sarang Dhote | &copy; Copyright Sarang Dhote
         st.rerun()
     st.write("---")
 
-
-# --- THE SCANNER & AUTO-DOCK PIPELINE ---
+# --- THE IDLE WAITING SCREEN ---
 if st.session_state.game_state == "IDLE":
-    if not PYZBAR_AVAILABLE:
-        st.error("Missing dependency: `pyzbar`. Please install via terminal to enable the scanner.")
-    else:
-        st.write("### 📸 Scan your Ligand Card")
-        camera_image = st.camera_input("Hold QR Card to Camera", key="qr")
-        
-        if camera_image is not None:
-            img = Image.open(camera_image)
-            decoded = decode(img)
-            
-            if decoded:
-                qr_text = decoded[0].data.decode('utf-8')
-                try:
-                    card_data = json.loads(qr_text)
-                    pdb_id = card_data.get("pdb_id", "")
-                    smiles = card_data.get("smiles", "")
-                    
-                    if pdb_id and smiles and qr_text != st.session_state.card_scanned:
-                        st.session_state.card_scanned = qr_text
-                        st.session_state.game_state = "DOCKING"
-                        st.session_state.scanned_disease = card_data.get("disease", "")
-                        st.session_state.scanned_drug = card_data.get("drug_name", "")
-                        st.session_state.scanned_pdb = pdb_id
-                        st.session_state.scanned_smiles = smiles
-                        st.rerun() 
-                except json.JSONDecodeError:
-                    st.error("Invalid QR format detected.")
-
+    st.write("---")
+    st.markdown("""
+    <div style='text-align: center; padding: 40px;'>
+        <h2 style='color:#1b5e20;'>Ready to Play!</h2>
+        <p style='color:gray; font-size: 16px;'>Use your phone's native camera to scan a <b>Ligand Legends</b> physical card.<br>The game will automatically extract the molecules and start the docking process.</p>
+        <p style='font-size: 50px;'>📱 ➔ 🃏</p>
+    </div>
+    """, unsafe_allow_html=True)
 
 # --- DOCKING EXECUTION BLOCK ---
 if st.session_state.game_state == "DOCKING":
@@ -441,7 +417,6 @@ if st.session_state.game_state == "DOCKING":
     except Exception as e:
         st.error(f"Failed to execute docking: {e}")
         if st.button("Reset"): reset_game(); st.rerun()
-
 
 # --- 3D VIEWER & INTERACTION TABLE ---
 if st.session_state.game_state == "FINISHED" and os.path.exists("docking_poses.pdbqt"):
