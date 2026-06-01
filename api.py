@@ -264,7 +264,7 @@ def render_mobile_viewer(receptor_data, ligand_data, style="cartoon", show_surfa
 st.set_page_config(page_title="Ligand Legends", layout="centered")
 
 st.markdown("<h1 style='text-align: center;'>🧬 Ligand Legends</h1>", unsafe_allow_html=True)
-st.markdown("<p style='text-align: center; font-size:12px; color:gray;'>Powered by InSilico BioSphere | Developed by Mr. Sarang S. Dhote</p>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center; font-size:12px; color:gray;'>Powered by InSilico BioSphere | Developed by Tech Logic Core Systems (TLCS)</p>", unsafe_allow_html=True)
 
 if "game_state" not in st.session_state: st.session_state.game_state = "IDLE"
 if "affinity_score" not in st.session_state: st.session_state.affinity_score = ""
@@ -312,7 +312,7 @@ if st.session_state.game_state == "FINISHED":
 <p style="font-size:15px; color:#111; font-weight:bold;">{comment}</p>
 </div>
 <div style="margin-top: 20px; font-size: 11px; color: #999; border-top: 1px solid #ddd; padding-top: 10px;">
-Ligand Legends game developed by Sarang Dhote | &copy; Copyright Sarang Dhote
+Developed by Dr. Sarang S. Dhote | Tech Logic Core Systems (TLCS)
 </div>
 </div>
 """
@@ -326,7 +326,7 @@ Ligand Legends game developed by Sarang Dhote | &copy; Copyright Sarang Dhote
             st.warning("Please enter your name before submitting!")
         else:
             with st.spinner("Uploading to leaderboard..."):
-                GOOGLE_SHEET_WEBHOOK_URL = "https://script.google.com/macros/s/YOUR_SCRIPT_ID/exec"
+                GOOGLE_SHEET_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbxL7PoZn03b5em5BgT5k7dpQvf1x1OH0rR_Jsqb0zVhQdLsU1_o-jSETbk9ZXmycqc0/exec"
                 payload = {
                     "Name": student_name,
                     "Disease": disease_n,
@@ -336,10 +336,13 @@ Ligand Legends game developed by Sarang Dhote | &copy; Copyright Sarang Dhote
                     "Rank": rank
                 }
                 try:
-                    requests.post(GOOGLE_SHEET_WEBHOOK_URL, json=payload) 
-                    st.success(f"Awesome job, {student_name}! Score saved to Google Sheets.")
+                    response = requests.post(GOOGLE_SHEET_WEBHOOK_URL, json=payload, timeout=10)
+                    if response.status_code == 200:
+                        st.success(f"Awesome job, {student_name}! Score saved to Google Sheets.")
+                    else:
+                        st.error(f"Error saving data. Google responded with status code: {response.status_code}")
                 except Exception as e:
-                    st.error("Failed to connect to Google Sheets.")
+                    st.error(f"Failed to connect to Google Sheets. Error details: {e}")
     
     if st.button("🔄 Play Next Card", use_container_width=True):
         reset_game()
