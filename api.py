@@ -3,6 +3,7 @@ import streamlit as st
 import subprocess
 import os
 import urllib.request
+import urllib.parse
 import json
 import re
 import requests
@@ -239,7 +240,7 @@ def split_docking_poses(poses_file_path, max_poses=5):
             if line.startswith("MODEL"):
                 mode = int(line.split()[1])
                 if mode > max_poses:
-                    mode = None # Skip recording beyond max_poses
+                    mode = None
                 else:
                     lines = []
             elif line.startswith("REMARK VINA RESULT:") and mode is not None:
@@ -398,7 +399,7 @@ if st.session_state.game_state == "DOCKING":
         st.error(f"Failed to execute docking: {e}")
         if st.button("Reset"): reset_game(); st.rerun()
 
-# --- THE GAME RESULT & RECORD UI ---
+# --- THE GAME RESULT UI ---
 if st.session_state.game_state == "FINISHED":
     try:
         aff_val = float(st.session_state.affinity_score)
@@ -521,7 +522,6 @@ if st.session_state.game_state == "FINISHED":
     st.write("---")
     st.write("### 📲 Save & Share Results")
     
-    import urllib.parse
     whatsapp_msg = f"🧬 *LIGAND LEGENDS - Docking Result!*\n\n💊 *Drug:* {drug_n}\n🎯 *Target:* {prot_n}\n🔥 *Score:* {st.session_state.affinity_score} kcal/mol ({rank})\n\nCan you beat my score?"
     encoded_msg = urllib.parse.quote(whatsapp_msg)
     whatsapp_url = f"https://wa.me/?text={encoded_msg}"
