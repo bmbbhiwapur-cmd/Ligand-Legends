@@ -31,7 +31,6 @@ ensure_linux_vina_exists()
 # --- 2. BIOINFORMATICS PIPELINE FUNCTIONS ---
 
 def fetch_ligand_data_from_pubchem(smiles_string):
-    # UPDATED: Now fetches IUPAC Name as well
     metadata = {"name": "Unknown Compound", "mw": "N/A", "formula": "N/A", "iupac": "N/A"}
     try:
         escaped_smiles = urllib.parse.quote(smiles_string)
@@ -49,7 +48,6 @@ def fetch_ligand_data_from_pubchem(smiles_string):
     return metadata
 
 def extract_pdb_metadata(file_path, pdb_id="Custom"):
-    # UPDATED: Now extracts Method, Resolution, and Unique Ligands
     meta = {
         "name": "Unknown Protein", 
         "title": "Structure Matrix", 
@@ -231,20 +229,30 @@ def evaluate_affinity(score_val, drug_name, disease_name):
         points = 20
     return rank, desc, comment, color, points
 
-def split_docking_poses(poses_file_path):
+# UPDATED: Now parses up to 5 poses and their individual scores
+def split_docking_poses(poses_file_path, max_poses=5):
     poses = {}
-    if not os.path.exists(poses_file_path): return poses
+    scores = {}
+    if not os.path.exists(poses_file_path): return poses, scores
     mode, lines = None, []
     with open(poses_file_path, "r") as f:
         for line in f:
             if line.startswith("MODEL"):
                 mode = int(line.split()[1])
-                lines = []
+                if mode > max_poses:
+                    mode = None # Skip recording beyond max_poses
+                else:
+                    lines = []
+            elif line.startswith("REMARK VINA RESULT:") and mode is not None:
+                scores[mode] = line.split()[3]
+                lines.append(line)
             elif line.startswith("ENDMDL"):
-                if mode is not None: poses[mode] = "".join(lines)
+                if mode is not None: 
+                    poses[mode] = "".join(lines)
                 mode = None
-            else: lines.append(line)
-    return poses
+            elif mode is not None:
+                lines.append(line)
+    return poses, scores
 
 def render_mobile_viewer(receptor_data, ligand_data, style="cartoon", show_surface=False, interactions=[]):
     surface_js = "viewer.addSurface($3Dmol.SurfaceType.VDW, {opacity:0.45, colorscheme:{prop:'b',gradient:'rwb'}}, {model:0});" if show_surface else ""
@@ -292,7 +300,7 @@ def render_mobile_viewer(receptor_data, ligand_data, style="cartoon", show_surfa
 st.set_page_config(page_title="Ligand Legends", layout="centered")
 
 st.markdown("<h1 style='text-align: center;'>🧬 Ligand Legends</h1>", unsafe_allow_html=True)
-st.markdown("<p style='text-align: center; font-size:12px; color:gray;'>Powered by InSilico BioSphere | Developed by Mr. Sarang S. Dhote</p>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center; font-size:12px; color:gray;'>Powered by InSilico BioSphere | Developed by Tech Logic Core Systems (TLCS)</p>", unsafe_allow_html=True)
 
 if "game_state" not in st.session_state: st.session_state.game_state = "IDLE"
 if "affinity_score" not in st.session_state: st.session_state.affinity_score = ""
@@ -316,92 +324,6 @@ if st.session_state.game_state == "IDLE" and "pdb" in st.query_params and "smile
     st.session_state.scanned_disease = st.query_params.get("disease", "Unknown Disease")
     st.session_state.game_state = "DOCKING"
     st.rerun()
-
-# --- THE GAME RESULT POPUP & GOOGLE SHEETS SUBMIT ---
-if st.session_state.game_state == "FINISHED":
-    try:
-        aff_val = float(st.session_state.affinity_score)
-    except:
-        aff_val = 0.0
-        
-    drug_n = st.session_state.ligand_meta.get('name', st.session_state.scanned_drug)
-    prot_n = st.session_state.protein_meta.get('name', st.session_state.scanned_pdb)
-    disease_n = st.session_state.scanned_disease
-    
-    rank, desc, comment, rank_color, points_earned = evaluate_affinity(aff_val, drug_n, disease_n)
-    points_display = f"+{points_earned}" if points_earned > 0 else str(points_earned)
-    
-    html_card = f"""
-<div style="background-color:#f0f7f4; border: 4px solid {rank_color}; padding:20px; border-radius:15px; margin-bottom:20px; text-align:center; box-shadow: 0px 8px 16px rgba(0,0,0,0.2);">
-<h2 style="margin-top:0; color:#333;">🎉 DOCKING COMPLETE!</h2>
-<h4 style="color:#666; margin-bottom:5px;">{drug_n} ➔ {prot_n}</h4>
-<p style="font-size:14px; color:gray; text-transform:uppercase; letter-spacing:1px; margin-top:15px;">Binding Affinity Score</p>
-<h1 style="font-size:55px; font-weight:900; color:{rank_color}; margin:0;">{st.session_state.affinity_score} <span style="font-size:20px;">kcal/mol</span></h1>
-<div style="background-color: {rank_color}; color: white; padding: 10px; border-radius: 50px; width: 150px; margin: 15px auto; font-size: 24px; font-weight: bold;">
-    {points_display} PTS
-</div>
-<div style="background-color: white; padding: 10px; border-radius: 8px; margin-top: 15px; border: 1px solid #ddd;">
-<h3 style="color:{rank_color}; margin:0;">{rank}</h3>
-<p style="font-size:15px; color:#111; font-weight:bold;">{comment}</p>
-</div>
-</div>
-"""
-    st.markdown(html_card, unsafe_allow_html=True)
-    
-    # --- NEW SECTION: EXPERIMENTAL & SIMULATION DETAILS ---
-    with st.expander("📊 View Experimental & Simulation Details", expanded=True):
-        st.markdown("### 🎯 Protein Receptor")
-        st.markdown(f"**Macromolecule Name:** {st.session_state.protein_meta.get('name', 'N/A')}")
-        st.markdown(f"**Organism:** {st.session_state.protein_meta.get('organism', 'N/A')}")
-        st.markdown(f"**Method:** {st.session_state.protein_meta.get('method', 'N/A')}")
-        st.markdown(f"**Resolution:** {st.session_state.protein_meta.get('resolution', 'N/A')}")
-        st.markdown(f"**Unique Ligands (Native):** {st.session_state.protein_meta.get('unique_ligands', 'N/A')}")
-        st.markdown("---")
-        
-        st.markdown("### 💊 Ligand / Drug")
-        st.markdown(f"**Name:** {st.session_state.ligand_meta.get('name', 'N/A')}")
-        st.markdown(f"**SMILES:** `{st.session_state.scanned_smiles}`")
-        st.markdown(f"**IUPAC Nomenclature:** {st.session_state.ligand_meta.get('iupac', 'N/A')}")
-        st.markdown(f"**Formula:** {st.session_state.ligand_meta.get('formula', 'N/A')} ({st.session_state.ligand_meta.get('mw', 'N/A')})")
-        st.markdown("---")
-        
-        st.markdown("### 📐 Blind Docking Grid Configuration")
-        grid = st.session_state.grid_config
-        if grid:
-            st.code(f"Center (X, Y, Z): {grid['cx']:.2f}, {grid['cy']:.2f}, {grid['cz']:.2f}\nSize   (X, Y, Z): {grid['sx']:.2f}, {grid['sy']:.2f}, {grid['sz']:.2f}", language="text")
-
-    st.write("---")
-    st.write("### 📝 Record Your Score")
-    student_name = st.text_input("Enter Student Name (Use exact same name for all cards!):")
-    
-    if st.button("📤 Submit Score to Google Sheets", type="primary", use_container_width=True):
-        if student_name.strip() == "":
-            st.warning("Please enter your name before submitting!")
-        else:
-            with st.spinner("Uploading to leaderboard..."):
-                GOOGLE_SHEET_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbxL7PoZn03b5em5BgT5k7dpQvf1x1OH0rR_Jsqb0zVhQdLsU1_o-jSETbk9ZXmycqc0/exec"
-                payload = {
-                    "Name": student_name,
-                    "Disease": disease_n,
-                    "Drug": drug_n,
-                    "Target": prot_n,
-                    "Score": st.session_state.affinity_score,
-                    "Rank": rank,
-                    "Points": points_earned
-                }
-                try:
-                    response = requests.post(GOOGLE_SHEET_WEBHOOK_URL, json=payload)
-                    if response.status_code == 200:
-                        st.success(f"Score saved! You earned {points_display} points this round.")
-                    else:
-                        st.error(f"Failed to connect to Google Sheets. Status Code: {response.status_code}")
-                except Exception as e:
-                    st.error("Failed to connect to Google Sheets. Check your server logs.")
-    
-    if st.button("🔄 Play Next Card", use_container_width=True):
-        reset_game()
-        st.rerun()
-    st.write("---")
 
 # --- THE IDLE WAITING SCREEN ---
 if st.session_state.game_state == "IDLE":
@@ -430,7 +352,6 @@ if st.session_state.game_state == "DOCKING":
     progress_bar.progress(20, text="Calculating Blind Docking Grid Space...")
     cx, cy, cz, sx, sy, sz = compute_protein_centroid("protein.pdbqt")
     
-    # NEW: Save grid config to session state to display later
     st.session_state.grid_config = {"cx": cx, "cy": cy, "cz": cz, "sx": sx, "sy": sy, "sz": sz}
     
     progress_bar.progress(30, text="Igniting InSilico BioSphere Engine...")
@@ -478,32 +399,129 @@ if st.session_state.game_state == "DOCKING":
         st.error(f"Failed to execute docking: {e}")
         if st.button("Reset"): reset_game(); st.rerun()
 
-# --- 3D VIEWER & INTERACTION TABLE ---
-if st.session_state.game_state == "FINISHED" and os.path.exists("docking_poses.pdbqt"):
-    st.write("### 🔬 Interactive Docked Complex")
-    
-    col_style, col_mesh = st.columns(2)
-    with col_style:
-        view_style = st.selectbox("Style:", ["Cartoon (Ribbon)", "Sticks", "Spacefill"])
-        view_style = view_style.split()[0].lower()
-    with col_mesh:
-        st.write("") 
-        show_mesh = st.checkbox("Toggle Translucent Surface")
-    
-    poses = split_docking_poses("docking_poses.pdbqt")
-    top_pose = poses.get(1, "")
-    
-    active_interactions = compute_spatial_interactions("protein.pdbqt", top_pose)
-    
-    p_data = ""
-    if os.path.exists("protein.pdbqt"):
-        with open("protein.pdbqt", "r") as f: p_data = f.read()
+# --- THE GAME RESULT & RECORD UI ---
+if st.session_state.game_state == "FINISHED":
+    try:
+        aff_val = float(st.session_state.affinity_score)
+    except:
+        aff_val = 0.0
         
-    render_mobile_viewer(p_data, top_pose, style=view_style, show_surface=show_mesh, interactions=active_interactions)
+    drug_n = st.session_state.ligand_meta.get('name', st.session_state.scanned_drug)
+    prot_n = st.session_state.protein_meta.get('name', st.session_state.scanned_pdb)
+    disease_n = st.session_state.scanned_disease
     
-    st.write("### 🔗 Interaction Profile")
-    if active_interactions:
-        df_int = pd.DataFrame(active_interactions)
-        st.dataframe(df_int[["Residue Contact", "Interaction Type", "Distance (Å)"]], hide_index=True, use_container_width=True)
-    else:
-        st.info("No close contacts detected within 3.8 Å.")
+    rank, desc, comment, rank_color, points_earned = evaluate_affinity(aff_val, drug_n, disease_n)
+    points_display = f"+{points_earned}" if points_earned > 0 else str(points_earned)
+    
+    # 1. RENDER RESULT CARD
+    html_card = f"""
+<div style="background-color:#f0f7f4; border: 4px solid {rank_color}; padding:20px; border-radius:15px; margin-bottom:20px; text-align:center; box-shadow: 0px 8px 16px rgba(0,0,0,0.2);">
+<h2 style="margin-top:0; color:#333;">🎉 DOCKING COMPLETE!</h2>
+<h4 style="color:#666; margin-bottom:5px;">{drug_n} ➔ {prot_n}</h4>
+<p style="font-size:14px; color:gray; text-transform:uppercase; letter-spacing:1px; margin-top:15px;">Binding Affinity Score</p>
+<h1 style="font-size:55px; font-weight:900; color:{rank_color}; margin:0;">{st.session_state.affinity_score} <span style="font-size:20px;">kcal/mol</span></h1>
+<div style="background-color: {rank_color}; color: white; padding: 10px; border-radius: 50px; width: 150px; margin: 15px auto; font-size: 24px; font-weight: bold;">
+    {points_display} PTS
+</div>
+<div style="background-color: white; padding: 10px; border-radius: 8px; margin-top: 15px; border: 1px solid #ddd;">
+<h3 style="color:{rank_color}; margin:0;">{rank}</h3>
+<p style="font-size:15px; color:#111; font-weight:bold;">{comment}</p>
+</div>
+</div>
+"""
+    st.markdown(html_card, unsafe_allow_html=True)
+    
+    # 2. RENDER EXPERIMENTAL DETAILS
+    with st.expander("📊 View Experimental & Simulation Details", expanded=True):
+        st.markdown("### 🎯 Protein Receptor")
+        st.markdown(f"**Macromolecule Name:** {st.session_state.protein_meta.get('name', 'N/A')}")
+        st.markdown(f"**Organism:** {st.session_state.protein_meta.get('organism', 'N/A')}")
+        st.markdown(f"**Method:** {st.session_state.protein_meta.get('method', 'N/A')}")
+        st.markdown(f"**Resolution:** {st.session_state.protein_meta.get('resolution', 'N/A')}")
+        st.markdown(f"**Unique Ligands (Native):** {st.session_state.protein_meta.get('unique_ligands', 'N/A')}")
+        st.markdown("---")
+        
+        st.markdown("### 💊 Ligand / Drug")
+        st.markdown(f"**Name:** {st.session_state.ligand_meta.get('name', 'N/A')}")
+        st.markdown(f"**SMILES:** `{st.session_state.scanned_smiles}`")
+        st.markdown(f"**IUPAC Nomenclature:** {st.session_state.ligand_meta.get('iupac', 'N/A')}")
+        st.markdown(f"**Formula:** {st.session_state.ligand_meta.get('formula', 'N/A')} ({st.session_state.ligand_meta.get('mw', 'N/A')})")
+        st.markdown("---")
+        
+        st.markdown("### 📐 Blind Docking Grid Configuration")
+        grid = st.session_state.grid_config
+        if grid:
+            st.code(f"Center (X, Y, Z): {grid['cx']:.2f}, {grid['cy']:.2f}, {grid['cz']:.2f}\nSize   (X, Y, Z): {grid['sx']:.2f}, {grid['sy']:.2f}, {grid['sz']:.2f}", language="text")
+
+    # 3. RENDER 3D VIEWER & POSE SELECTOR
+    if os.path.exists("docking_poses.pdbqt"):
+        poses, scores = split_docking_poses("docking_poses.pdbqt", max_poses=5)
+        
+        if poses:
+            st.write("---")
+            st.write("### 🔬 Interactive Docked Complex")
+            
+            # --- NEW: POSE SELECTOR ---
+            pose_options = {m: f"Pose {m} (Score: {scores.get(m, 'N/A')} kcal/mol)" for m in poses.keys()}
+            selected_mode = st.selectbox("Select Binding Mode (Pose):", options=list(pose_options.keys()), format_func=lambda x: pose_options[x])
+            
+            selected_pose_data = poses[selected_mode]
+            
+            col_style, col_mesh = st.columns(2)
+            with col_style:
+                view_style = st.selectbox("Style:", ["Cartoon (Ribbon)", "Sticks", "Spacefill"])
+                view_style = view_style.split()[0].lower()
+            with col_mesh:
+                st.write("") 
+                show_mesh = st.checkbox("Toggle Translucent Surface")
+            
+            # Dynamic Interaction Parsing based on selected Pose!
+            active_interactions = compute_spatial_interactions("protein.pdbqt", selected_pose_data)
+            
+            p_data = ""
+            if os.path.exists("protein.pdbqt"):
+                with open("protein.pdbqt", "r") as f: p_data = f.read()
+                
+            render_mobile_viewer(p_data, selected_pose_data, style=view_style, show_surface=show_mesh, interactions=active_interactions)
+            
+            st.write("### 🔗 Interaction Profile")
+            if active_interactions:
+                df_int = pd.DataFrame(active_interactions)
+                st.dataframe(df_int[["Residue Contact", "Interaction Type", "Distance (Å)"]], hide_index=True, use_container_width=True)
+            else:
+                st.info("No close contacts detected within 3.8 Å.")
+
+    # 4. RENDER SCORE RECORD & NEXT CARD (Shifted to Last)
+    st.write("---")
+    st.write("### 📝 Record Your Score")
+    student_name = st.text_input("Enter Student Name (Use exact same name for all cards!):")
+    
+    if st.button("📤 Submit Score to Google Sheets", type="primary", use_container_width=True):
+        if student_name.strip() == "":
+            st.warning("Please enter your name before submitting!")
+        else:
+            with st.spinner("Uploading to leaderboard..."):
+                GOOGLE_SHEET_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbxL7PoZn03b5em5BgT5k7dpQvf1x1OH0rR_Jsqb0zVhQdLsU1_o-jSETbk9ZXmycqc0/exec"
+                payload = {
+                    "Name": student_name,
+                    "Disease": disease_n,
+                    "Drug": drug_n,
+                    "Target": prot_n,
+                    "Score": st.session_state.affinity_score,
+                    "Rank": rank,
+                    "Points": points_earned
+                }
+                try:
+                    response = requests.post(GOOGLE_SHEET_WEBHOOK_URL, json=payload)
+                    if response.status_code == 200:
+                        st.success(f"Score saved! You earned {points_display} points this round.")
+                    else:
+                        st.error(f"Failed to connect to Google Sheets. Status Code: {response.status_code}")
+                except Exception as e:
+                    st.error("Failed to connect to Google Sheets. Check your server logs.")
+    
+    st.write("")
+    if st.button("🔄 Play Next Card", use_container_width=True):
+        reset_game()
+        st.rerun()
+    st.write("---")
