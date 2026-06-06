@@ -31,10 +31,11 @@ ensure_linux_vina_exists()
 # --- 2. BIOINFORMATICS PIPELINE FUNCTIONS ---
 
 def fetch_ligand_data_from_pubchem(smiles_string):
-    metadata = {"name": "Unknown Compound", "mw": "N/A", "formula": "N/A"}
+    # UPDATED: Now fetches IUPAC Name as well
+    metadata = {"name": "Unknown Compound", "mw": "N/A", "formula": "N/A", "iupac": "N/A"}
     try:
         escaped_smiles = urllib.parse.quote(smiles_string)
-        url = f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/smiles/{escaped_smiles}/property/Title,MolecularWeight,MolecularFormula/JSON"
+        url = f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/smiles/{escaped_smiles}/property/Title,MolecularWeight,MolecularFormula,IUPACName/JSON"
         req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
         with urllib.request.urlopen(req, timeout=8) as response:
             res_data = json.loads(response.read().decode())
@@ -43,21 +44,45 @@ def fetch_ligand_data_from_pubchem(smiles_string):
                 metadata["name"] = props.get("Title", "Target Chemical")
                 metadata["mw"] = f"{props.get('MolecularWeight', 'N/A')} g/mol"
                 metadata["formula"] = props.get("MolecularFormula", "N/A")
+                metadata["iupac"] = props.get("IUPACName", "N/A")
     except Exception: pass 
     return metadata
 
 def extract_pdb_metadata(file_path, pdb_id="Custom"):
-    meta = {"name": "Unknown Protein", "title": "Structure Matrix", "id": pdb_id.upper(), "class": "Unknown", "organism": "Unknown"}
+    # UPDATED: Now extracts Method, Resolution, and Unique Ligands
+    meta = {
+        "name": "Unknown Protein", 
+        "title": "Structure Matrix", 
+        "id": pdb_id.upper(), 
+        "organism": "Unknown",
+        "method": "Unknown",
+        "resolution": "N/A",
+        "unique_ligands": []
+    }
     if not os.path.exists(file_path): return meta
+    
+    ligands = set()
     with open(file_path, "r") as f:
-        title_parts = []
         for line in f:
-            if line.startswith("TITLE"): title_parts.append(line[10:80].strip())
-            elif line.startswith("COMPND") and "MOLECULE:" in line:
-                if meta["name"] == "Unknown Protein": meta["name"] = line.split("MOLECULE:")[1].split(";")[0].strip().title()
-            elif "ORGANISM_SCIENTIFIC" in line: meta["organism"] = line.split(":")[-1].replace(";","").strip()
-    if title_parts: meta["title"] = " ".join(title_parts).title()
-    if meta["name"] == "Unknown Protein": meta["name"] = meta["title"]
+            if line.startswith("COMPND") and "MOLECULE:" in line:
+                if meta["name"] == "Unknown Protein": 
+                    meta["name"] = line.split("MOLECULE:")[1].split(";")[0].strip().title()
+            elif "ORGANISM_SCIENTIFIC" in line: 
+                meta["organism"] = line.split(":")[-1].replace(";","").strip()
+            elif line.startswith("EXPDTA"):
+                meta["method"] = line[10:].strip()
+            elif line.startswith("REMARK   2 RESOLUTION."):
+                try: meta["resolution"] = line.split("RESOLUTION.")[1].strip()
+                except: pass
+            elif line.startswith("HETNAM"):
+                parts = line.split()
+                if len(parts) >= 3:
+                    lig_name = " ".join(parts[2:])
+                    if lig_name not in ligands:
+                        ligands.add(lig_name)
+                        meta["unique_ligands"].append(lig_name)
+    
+    meta["unique_ligands"] = ", ".join(meta["unique_ligands"]) if meta["unique_ligands"] else "None Found"
     return meta
 
 def compute_protein_centroid(pdbqt_file):
@@ -186,23 +211,25 @@ def compute_spatial_interactions(receptor_file, ligand_pdbqt_str):
 # --- 4. SCORING & VISUALIZATION ---
 
 def evaluate_affinity(score_val, drug_name, disease_name):
-    # UPDATED LOGIC FOR PRECISE RANGES
     if score_val > -4.5:
         rank = "Weak / Poor Binding"
         desc = "The molecule might just be loosely bumping into the protein."
-        comment = f"❌ {drug_name} is considered a <b>weak</b> candidate for {disease_name} medicinal activity."
+        comment = f"❌ {drug_name} is considered a <b>weak</b> candidate."
         color = "#e53935" # Red
+        points = -10
     elif -6.6 <= score_val <= -4.5:
         rank = "Moderate Binding"
         desc = "Often used as a standard baseline or threshold for a 'hit'."
-        comment = f"✅ {drug_name} shows <b>good</b> potential for {disease_name} medicinal activity."
+        comment = f"✅ {drug_name} shows <b>good</b> potential."
         color = "#fb8c00" # Orange
+        points = 0
     else:  # score_val <= -6.7
         rank = "Best Binding"
         desc = "Excellent binding affinity indicating a highly stable complex."
-        comment = f"🔥 {drug_name} is a <b>HIGHLY POTENT</b> candidate for {disease_name} medicinal activity!"
+        comment = f"🔥 {drug_name} is a <b>HIGHLY POTENT</b> candidate!"
         color = "#2e7d32" # Green
-    return rank, desc, comment, color
+        points = 20
+    return rank, desc, comment, color, points
 
 def split_docking_poses(poses_file_path):
     poses = {}
@@ -271,10 +298,12 @@ if "game_state" not in st.session_state: st.session_state.game_state = "IDLE"
 if "affinity_score" not in st.session_state: st.session_state.affinity_score = ""
 if "protein_meta" not in st.session_state: st.session_state.protein_meta = {}
 if "ligand_meta" not in st.session_state: st.session_state.ligand_meta = {}
+if "grid_config" not in st.session_state: st.session_state.grid_config = {}
 
 def reset_game():
     st.session_state.game_state = "IDLE"
     st.session_state.affinity_score = ""
+    st.session_state.grid_config = {}
     st.query_params.clear()
     for f in ["protein.pdbqt", "ligand.pdbqt", "docking_poses.pdbqt", "temp_ligand.pdb"]:
         if os.path.exists(f): os.remove(f)
@@ -299,7 +328,8 @@ if st.session_state.game_state == "FINISHED":
     prot_n = st.session_state.protein_meta.get('name', st.session_state.scanned_pdb)
     disease_n = st.session_state.scanned_disease
     
-    rank, desc, comment, rank_color = evaluate_affinity(aff_val, drug_n, disease_n)
+    rank, desc, comment, rank_color, points_earned = evaluate_affinity(aff_val, drug_n, disease_n)
+    points_display = f"+{points_earned}" if points_earned > 0 else str(points_earned)
     
     html_card = f"""
 <div style="background-color:#f0f7f4; border: 4px solid {rank_color}; padding:20px; border-radius:15px; margin-bottom:20px; text-align:center; box-shadow: 0px 8px 16px rgba(0,0,0,0.2);">
@@ -307,20 +337,42 @@ if st.session_state.game_state == "FINISHED":
 <h4 style="color:#666; margin-bottom:5px;">{drug_n} ➔ {prot_n}</h4>
 <p style="font-size:14px; color:gray; text-transform:uppercase; letter-spacing:1px; margin-top:15px;">Binding Affinity Score</p>
 <h1 style="font-size:55px; font-weight:900; color:{rank_color}; margin:0;">{st.session_state.affinity_score} <span style="font-size:20px;">kcal/mol</span></h1>
+<div style="background-color: {rank_color}; color: white; padding: 10px; border-radius: 50px; width: 150px; margin: 15px auto; font-size: 24px; font-weight: bold;">
+    {points_display} PTS
+</div>
 <div style="background-color: white; padding: 10px; border-radius: 8px; margin-top: 15px; border: 1px solid #ddd;">
 <h3 style="color:{rank_color}; margin:0;">{rank}</h3>
-<p style="font-size:13px; color:#555; margin-bottom:10px;"><i>"{desc}"</i></p>
 <p style="font-size:15px; color:#111; font-weight:bold;">{comment}</p>
-</div>
-<div style="margin-top: 20px; font-size: 11px; color: #999; border-top: 1px solid #ddd; padding-top: 10px;">
-Ligand Legends game developed by Sarang Dhote | &copy; Copyright Sarang Dhote
 </div>
 </div>
 """
     st.markdown(html_card, unsafe_allow_html=True)
     
+    # --- NEW SECTION: EXPERIMENTAL & SIMULATION DETAILS ---
+    with st.expander("📊 View Experimental & Simulation Details", expanded=True):
+        st.markdown("### 🎯 Protein Receptor")
+        st.markdown(f"**Macromolecule Name:** {st.session_state.protein_meta.get('name', 'N/A')}")
+        st.markdown(f"**Organism:** {st.session_state.protein_meta.get('organism', 'N/A')}")
+        st.markdown(f"**Method:** {st.session_state.protein_meta.get('method', 'N/A')}")
+        st.markdown(f"**Resolution:** {st.session_state.protein_meta.get('resolution', 'N/A')}")
+        st.markdown(f"**Unique Ligands (Native):** {st.session_state.protein_meta.get('unique_ligands', 'N/A')}")
+        st.markdown("---")
+        
+        st.markdown("### 💊 Ligand / Drug")
+        st.markdown(f"**Name:** {st.session_state.ligand_meta.get('name', 'N/A')}")
+        st.markdown(f"**SMILES:** `{st.session_state.scanned_smiles}`")
+        st.markdown(f"**IUPAC Nomenclature:** {st.session_state.ligand_meta.get('iupac', 'N/A')}")
+        st.markdown(f"**Formula:** {st.session_state.ligand_meta.get('formula', 'N/A')} ({st.session_state.ligand_meta.get('mw', 'N/A')})")
+        st.markdown("---")
+        
+        st.markdown("### 📐 Blind Docking Grid Configuration")
+        grid = st.session_state.grid_config
+        if grid:
+            st.code(f"Center (X, Y, Z): {grid['cx']:.2f}, {grid['cy']:.2f}, {grid['cz']:.2f}\nSize   (X, Y, Z): {grid['sx']:.2f}, {grid['sy']:.2f}, {grid['sz']:.2f}", language="text")
+
+    st.write("---")
     st.write("### 📝 Record Your Score")
-    student_name = st.text_input("Enter Student Name to record score:")
+    student_name = st.text_input("Enter Student Name (Use exact same name for all cards!):")
     
     if st.button("📤 Submit Score to Google Sheets", type="primary", use_container_width=True):
         if student_name.strip() == "":
@@ -334,18 +386,17 @@ Ligand Legends game developed by Sarang Dhote | &copy; Copyright Sarang Dhote
                     "Drug": drug_n,
                     "Target": prot_n,
                     "Score": st.session_state.affinity_score,
-                    "Rank": rank
+                    "Rank": rank,
+                    "Points": points_earned
                 }
                 try:
                     response = requests.post(GOOGLE_SHEET_WEBHOOK_URL, json=payload)
                     if response.status_code == 200:
-                        st.success(f"Awesome job, {student_name}! Score saved to Google Sheets.")
+                        st.success(f"Score saved! You earned {points_display} points this round.")
                     else:
                         st.error(f"Failed to connect to Google Sheets. Status Code: {response.status_code}")
-                        print(f"Webhook Failed with status {response.status_code}. Response: {response.text}")
                 except Exception as e:
                     st.error("Failed to connect to Google Sheets. Check your server logs.")
-                    print("Webhook Connection Error:", e)
     
     if st.button("🔄 Play Next Card", use_container_width=True):
         reset_game()
@@ -378,6 +429,9 @@ if st.session_state.game_state == "DOCKING":
     
     progress_bar.progress(20, text="Calculating Blind Docking Grid Space...")
     cx, cy, cz, sx, sy, sz = compute_protein_centroid("protein.pdbqt")
+    
+    # NEW: Save grid config to session state to display later
+    st.session_state.grid_config = {"cx": cx, "cy": cy, "cz": cz, "sx": sx, "sy": sy, "sz": sz}
     
     progress_bar.progress(30, text="Igniting InSilico BioSphere Engine...")
     vina_cmd = [
