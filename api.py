@@ -412,7 +412,7 @@ if st.session_state.game_state == "FINISHED":
     rank, desc, comment, rank_color, points_earned = evaluate_affinity(aff_val, drug_n, disease_n)
     points_display = f"+{points_earned}" if points_earned > 0 else str(points_earned)
     
-    # Define fallback variables in case pose file fails
+    # Initialize variables for the export module
     selected_mode = 1
     active_interactions = []
     
@@ -492,7 +492,7 @@ if st.session_state.game_state == "FINISHED":
             else:
                 st.info("No close contacts detected within 3.8 Å.")
 
-    # 4. RENDER SCORE RECORD & EXPORT
+    # 4. RENDER SCORE RECORDING
     st.write("---")
     st.write("### 📝 Record Your Score")
     student_name = st.text_input("Enter Student Name (Use exact same name for all cards!):")
@@ -521,22 +521,22 @@ if st.session_state.game_state == "FINISHED":
                 except Exception as e:
                     st.error("Failed to connect to Google Sheets. Check your server logs.")
     
-    # --- EXPORT & SHARE MODULE ---
+    # 5. EXPORT & SHARE MODULE
     st.write("---")
     st.write("### 📲 Save & Share Results")
     
-    # Prepare the Interaction List for text format
+    # Dynamically build the interaction text block
     interaction_str = ""
     if active_interactions:
         for idx, i in enumerate(active_interactions):
-            if idx >= 15: # Cap at 15 to prevent extremely long URLs for WhatsApp
+            if idx >= 15: # Cap to prevent extremely long URLs for WhatsApp
                 interaction_str += "🔹 ... (Plus more interactions)\n"
                 break
             interaction_str += f"🔹 {i['Residue Contact']} : {i['Interaction Type']} ({i['Distance (Å)']} Å)\n"
     else:
         interaction_str = "None detected within 3.8 Å.\n"
 
-    # Exact identical text for BOTH WhatsApp and the .txt Note
+    # EXACT identical text for BOTH WhatsApp and the .txt Note
     detailed_report = f"""=========================================
 🧬 LIGAND LEGENDS: DOCKING REPORT
 =========================================
